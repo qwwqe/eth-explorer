@@ -76,7 +76,6 @@ func main() {
 }
 
 func step(client *ethclient.Client, repo *BlockRepo) error {
-	// #1
 	header, err := getLatestHeader(client)
 	if err != nil {
 		return err
@@ -84,50 +83,43 @@ func step(client *ethclient.Client, repo *BlockRepo) error {
 
 	fmt.Printf("Latest header: #%v (%v)\n", header.Number, header.Hash())
 
-	// #2
-	// lastFetchedBlockNumber := getLastFetchedBlockNumber()
-	lastFetchedBlockNumber, err := repo.LastFetchedBlockNumber()
+	newestFetchedBlockNumber, err := repo.NewestFetchedBlockNumber()
+	if err != nil {
+		return err
+	} else if newestFetchedBlockNumber == nil {
+		newestFetchedBlockNumber = new(big.Int).Sub(header.Number, big.NewInt(BatchSize))
+	}
+
+	oldestFetchedBlockNumber, err := repo.OldestFetchedBlockNumber()
 	if err != nil {
 		return err
 	}
-	if lastFetchedBlockNumber == nil {
-		lastFetchedBlockNumber = new(big.Int).Sub(header.Number, big.NewInt(BatchSize))
-	}
 
-	fmt.Printf("Last fetched: #%v\n", lastFetchedBlockNumber)
+	fmt.Printf("Last fetched: #%v\n", newestFetchedBlockNumber)
 
-	// #3
-	mostRecentGapLeft, mostRecentGapRight := getMostRecentGap()
-	if mostRecentGapLeft == nil {
-		mostRecentGapLeft = big.NewInt(-1)
-	}
-	if mostRecentGapRight == nil {
-		mostRecentGapRight = big.NewInt(0)
-	}
-
-	fmt.Printf("Gap left: #%v\n", mostRecentGapLeft)
-	fmt.Printf("Gap right: #%v\n", mostRecentGapRight)
-
-	// #4-#8
 	p := make([]*big.Int, 0, BatchSize)
 
-	latestDiff := new(big.Int).Sub(header.Number, lastFetchedBlockNumber).Int64()
-	for i := int64(1); i <= latestDiff && len(p) < BatchSize; i++ {
-		p = append(p, new(big.Int).Sub(header.Number, big.NewInt(i-1)))
+	newBlocks := new(big.Int).Sub(header.Number, newestFetchedBlockNumber).Int64()
+	for i := int64(1); i <= newBlocks && len(p) < BatchSize; i++ {
+		p = append(p, new(big.Int).Add(newestFetchedBlockNumber, big.NewInt(i)))
 	}
 
-	newBlocks := len(p)
 	fmt.Printf("Fetching %v new blocks\n", len(p))
 
-	gapDiff := new(big.Int).Sub(mostRecentGapRight, mostRecentGapLeft).Int64() - 1
-	for i := int64(1); i <= gapDiff && len(p) < BatchSize; i++ {
-		p = append(p, new(big.Int).Sub(mostRecentGapRight, big.NewInt(i)))
+	if oldestFetchedBlockNumber != nil && len(p) < BatchSize {
+		oldBlocks := int64(BatchSize - len(p))
+		fmt.Printf("Fetching %v old blocks\n", oldBlocks)
+		for i := int64(1); i <= oldBlocks && len(p) < BatchSize; i++ {
+			// todo: deal with negative block numbers
+			p = append(p, new(big.Int).Sub(oldestFetchedBlockNumber, big.NewInt(i)))
+		}
 	}
 
-	fmt.Printf("Fetching %v old blocks\n", len(p)-newBlocks)
-
 	blockErrors := make(chan error)
-	blockResponses := make(chan *types.Block)
+	blockCompletions := make(chan struct{})
+
+	blockResponses := new([]*types.Block)
+	blockResponseMut := sync.Mutex{}
 
 	for _, n := range p {
 		n := n
@@ -137,7 +129,13 @@ func step(client *ethclient.Client, repo *BlockRepo) error {
 			if err != nil {
 				blockErrors <- err
 			} else {
-				blockResponses <- block
+				fmt.Printf("Received block: %v (%v)\n", block.Number(), block.Hash())
+
+				blockResponseMut.Lock()
+				*blockResponses = append(*blockResponses, block)
+				blockResponseMut.Unlock()
+
+				blockCompletions <- struct{}{}
 			}
 		}()
 	}
@@ -146,16 +144,15 @@ func step(client *ethclient.Client, repo *BlockRepo) error {
 
 	for pending > 0 {
 		select {
-		case block := <-blockResponses:
-			fetchedBlocks.mut.Lock()
-			fetchedBlocks.Add(block.Number())
-			fetchedBlocks.mut.Unlock()
-
+		case <-blockCompletions:
 			pending--
-			fmt.Printf("Received block: %v (%v)\n", block.Number(), block.Hash())
 		case err := <-blockErrors:
 			return err
 		}
+	}
+
+	if err := repo.SaveBlocks(*blockResponses); err != nil {
+		return err
 	}
 
 	return nil
@@ -163,34 +160,4 @@ func step(client *ethclient.Client, repo *BlockRepo) error {
 
 func getLatestHeader(client *ethclient.Client) (*types.Header, error) {
 	return client.HeaderByNumber(context.TODO(), nil)
-}
-
-func getMostRecentGap() (*big.Int, *big.Int) {
-	fetchedBlocks.mut.RLock()
-	defer fetchedBlocks.mut.RUnlock()
-
-	if len(fetchedBlocks.numbers) == 0 {
-		return nil, nil
-	}
-
-	if len(fetchedBlocks.numbers) == 1 {
-		return nil, fetchedBlocks.numbers[0]
-	}
-
-	var l, r *big.Int
-
-	sum := new(big.Int)
-	one := big.NewInt(1)
-	for i := len(fetchedBlocks.numbers) - 2; i >= 0 && r == nil; i-- {
-		if sum.Add(fetchedBlocks.numbers[i], one).Cmp(fetchedBlocks.numbers[i+1]) != 0 {
-			l = fetchedBlocks.numbers[i]
-			r = fetchedBlocks.numbers[i+1]
-		}
-	}
-
-	if r == nil {
-		return nil, fetchedBlocks.numbers[0]
-	}
-
-	return l, r
 }

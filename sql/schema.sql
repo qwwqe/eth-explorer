@@ -1,15 +1,15 @@
 CREATE TABLE IF NOT EXISTS blocks (
   id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
   number DECIMAL(65) UNIQUE,
-  hash VARCHAR(32),
-  parentHash VARCHAR(32) NOT NULL,
+  hash VARCHAR(66),
+  parentHash VARCHAR(66) NOT NULL,
   timestamp BIGINT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS transactions (
   id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
   block_id INT NOT NULL,
-  hash VARCHAR(32) NOT NULL,
+  hash VARCHAR(66) UNIQUE NOT NULL,
   from_address VARCHAR(20) NOT NULL,
   to_address VARCHAR(20),
   nonce DECIMAL(65) NOT NULL,
@@ -17,4 +17,9 @@ CREATE TABLE IF NOT EXISTS transactions (
   value DECIMAL(65) NOT NULL,
   logs TEXT,
   FOREIGN KEY (block_id) REFERENCES blocks(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS gaps (
+  left_block_number DECIMAL(65),
+  right_block_number DECIMAL(65)
 );

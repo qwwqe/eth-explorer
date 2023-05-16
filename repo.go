@@ -4,7 +4,9 @@ import (
 	"database/sql"
 	"fmt"
 	"math/big"
+	"strings"
 
+	"github.com/ethereum/go-ethereum/core/types"
 	_ "github.com/go-sql-driver/mysql"
 )
 
@@ -32,17 +34,62 @@ func (r *BlockRepo) Open(config Config) error {
 	return nil
 }
 
-func (r *BlockRepo) LastFetchedBlockNumber() (*big.Int, error) {
+func (r *BlockRepo) SaveBlocks(blocks []*types.Block) error {
+	values := []interface{}{}
+	var b strings.Builder
+
+	b.WriteString(`INSERT INTO blocks (number, hash, parentHash, timestamp) VALUES `)
+
+	for i, v := range blocks {
+		fmt.Fprintf(&b, "(?, ?, ?, ?)")
+		if i < len(blocks)-1 {
+			fmt.Fprintf(&b, ",")
+		}
+		fmt.Fprintf(&b, " ")
+		values = append(values, v.Number().Int64(), v.Hash().String(), v.ParentHash().String(), v.Time())
+	}
+
+	q := b.String()
+
+	_, err := r.db.Exec(q, values...)
+
+	return err
+}
+
+func (r *BlockRepo) NewestFetchedBlockNumber() (*big.Int, error) {
 	q := `SELECT MAX(number) FROM blocks`
 	row := r.db.QueryRow(q)
 
-	i := new(big.Int)
+	// todo: deal with datatype mismatch
+	var i sql.NullInt64
 
-	if err := row.Scan(i); err != nil {
+	if err := row.Scan(&i); err != nil {
 		return nil, err
 	}
 
-	return i, nil
+	if i.Valid {
+		return big.NewInt(i.Int64), nil
+	}
+
+	return nil, nil
+}
+
+func (r *BlockRepo) OldestFetchedBlockNumber() (*big.Int, error) {
+	q := `SELECT MIN(number) FROM blocks`
+	row := r.db.QueryRow(q)
+
+	// todo: deal with datatype mismatch
+	var i sql.NullInt64
+
+	if err := row.Scan(&i); err != nil {
+		return nil, err
+	}
+
+	if i.Valid {
+		return big.NewInt(i.Int64), nil
+	}
+
+	return nil, nil
 }
 
 // todo: stub
