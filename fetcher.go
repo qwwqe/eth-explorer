@@ -2,25 +2,44 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 	"sync"
 
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"golang.org/x/time/rate"
 )
 
 type BlockFetcher struct {
-	client *ethclient.Client
-	repo   *BlockRepo
-	config *Config
+	client  *ethclient.Client
+	repo    *BlockRepo
+	config  *Config
+	limiter *rate.Limiter
 }
 
-func NewBlockFetcher(client *ethclient.Client, repo *BlockRepo, config *Config) *BlockFetcher {
-	return &BlockFetcher{client, repo, config}
+func NewBlockFetcher(client *ethclient.Client, repo *BlockRepo, config *Config) (*BlockFetcher, error) {
+	var fetchRate rate.Limit
+
+	if config.RateLimitSeconds.Seconds() <= 0 || config.RateLimitValue <= 0 {
+		fetchRate = rate.Inf
+	} else {
+		fetchRate = rate.Limit(config.RateLimitValue / int(config.RateLimitSeconds.Seconds()))
+	}
+
+	if fetchRate == 0 && (config.RateLimitValue != 0 || config.RateLimitSeconds.Seconds() != 0) {
+		return nil, errors.New(fmt.Sprintf("Fetching rate limit cannot be less than one event per second"))
+	}
+
+	return &BlockFetcher{client, repo, config, rate.NewLimiter(fetchRate, config.BatchSize)}, nil
 }
 
 func (f *BlockFetcher) FetchBlocks() error {
+	if err := f.limiter.Wait(context.TODO()); err != nil {
+		return err
+	}
+
 	header, err := f.GetLatestHeader()
 	if err != nil {
 		return err
@@ -69,6 +88,7 @@ func (f *BlockFetcher) FetchBlocks() error {
 	for _, n := range p {
 		n := n
 		go func() {
+			f.limiter.WaitN(context.TODO(), 2)
 			block, err := f.client.BlockByNumber(context.TODO(), n)
 
 			if err != nil {
