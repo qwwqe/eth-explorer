@@ -18,8 +18,3 @@ CREATE TABLE IF NOT EXISTS transactions (
   logs TEXT,
   FOREIGN KEY (block_id) REFERENCES blocks(id) ON DELETE CASCADE
 );
-
-CREATE TABLE IF NOT EXISTS gaps (
-  left_block_number DECIMAL(65),
-  right_block_number DECIMAL(65)
-);
