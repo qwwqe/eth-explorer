@@ -29,6 +29,16 @@ func (b *BlockNumbers) Add(i ...*big.Int) {
 	})
 }
 
+type Config struct {
+	DbHost     string `env:"ETHEXPLORER_DB_HOST"`
+	DbPort     string `env:"ETHEXPLORER_DB_PORT"`
+	DbUser     string `env:"ETHEXPLORER_DB_USER"`
+	DbPassword string `env:"ETHEXPLORER_DB_PASSWORD"`
+	DbName     string `env:"ETHEXPLORER_DB_NAME"`
+	RpcNode    string `env:"ETHEXPLORER_RPC_NODE"`
+	BatchSize  int    `env:"ETHEXPLORER_BATCH_SIZE"`
+}
+
 var fetchedBlocks BlockNumbers
 
 func main() {
@@ -38,10 +48,26 @@ func main() {
 		panic(err)
 	}
 
+	config := Config{
+		DbHost:     "127.0.0.1",
+		DbPort:     "3306",
+		DbUser:     "eth",
+		DbPassword: "eth",
+		DbName:     "eth",
+		RpcNode:    "https://data-seed-prebsc-1-s1.binance.org:8545/",
+		BatchSize:  5,
+	}
+
+	repo := &BlockRepo{}
+
+	if err := repo.Open(config); err != nil {
+		panic(err)
+	}
+
 	reader := bufio.NewReader(os.Stdin)
 
 	for i := 1; true; i++ {
-		if err := step(client); err != nil {
+		if err := step(client, repo); err != nil {
 			panic(err)
 		}
 
@@ -49,7 +75,7 @@ func main() {
 	}
 }
 
-func step(client *ethclient.Client) error {
+func step(client *ethclient.Client, repo *BlockRepo) error {
 	// #1
 	header, err := getLatestHeader(client)
 	if err != nil {
@@ -59,7 +85,11 @@ func step(client *ethclient.Client) error {
 	fmt.Printf("Latest header: #%v (%v)\n", header.Number, header.Hash())
 
 	// #2
-	lastFetchedBlockNumber := getLastFetchedBlockNumber()
+	// lastFetchedBlockNumber := getLastFetchedBlockNumber()
+	lastFetchedBlockNumber, err := repo.LastFetchedBlockNumber()
+	if err != nil {
+		return err
+	}
 	if lastFetchedBlockNumber == nil {
 		lastFetchedBlockNumber = new(big.Int).Sub(header.Number, big.NewInt(BatchSize))
 	}
@@ -133,17 +163,6 @@ func step(client *ethclient.Client) error {
 
 func getLatestHeader(client *ethclient.Client) (*types.Header, error) {
 	return client.HeaderByNumber(context.TODO(), nil)
-}
-
-func getLastFetchedBlockNumber() *big.Int {
-	fetchedBlocks.mut.RLock()
-	defer fetchedBlocks.mut.RUnlock()
-
-	if len(fetchedBlocks.numbers) < 1 {
-		return nil
-	}
-
-	return fetchedBlocks.numbers[len(fetchedBlocks.numbers)-1]
 }
 
 func getMostRecentGap() (*big.Int, *big.Int) {
