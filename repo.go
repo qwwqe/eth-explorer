@@ -14,7 +14,7 @@ type BlockRepo struct {
 	db *sql.DB
 }
 
-func (r *BlockRepo) Open(config Config) error {
+func (r *BlockRepo) Open(config *Config) error {
 	db, err := sql.Open("mysql",
 		fmt.Sprintf("%s:%s@tcp(%s:%s)/%s",
 			config.DbUser,
