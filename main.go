@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -49,22 +48,7 @@ func main() {
 		panic(err)
 	}
 
-	// reader := bufio.NewReader(os.Stdin)
-
-	fetcherErrors := make(chan error)
-
-	go func() {
-		for {
-			if err := fetcher.FetchBlocks(); err != nil {
-				fetcherErrors <- err
-			}
-			fmt.Printf("Tokens remaining: %v\n", fetcher.limiter.Tokens())
-		}
-	}()
-
-	for err := range fetcherErrors {
-		if err != nil {
-			panic(err)
-		}
+	if err := fetcher.Fetch(); err != nil {
+		panic(err)
 	}
 }

@@ -93,15 +93,15 @@ func (f *BlockFetcher) FetchBlocks() error {
 
 			if err != nil {
 				blockErrors <- err
-			} else {
-				fmt.Printf("Received block: %v (%v)\n", block.Number(), block.Hash())
-
-				blockResponseMut.Lock()
-				*blockResponses = append(*blockResponses, block)
-				blockResponseMut.Unlock()
-
-				blockCompletions <- struct{}{}
+				return
 			}
+			fmt.Printf("Received block: %v (%v)\n", block.Number(), block.Hash())
+
+			blockResponseMut.Lock()
+			*blockResponses = append(*blockResponses, block)
+			blockResponseMut.Unlock()
+
+			blockCompletions <- struct{}{}
 		}()
 	}
 
@@ -125,4 +125,23 @@ func (f *BlockFetcher) FetchBlocks() error {
 
 func (f *BlockFetcher) GetLatestHeader() (*types.Header, error) {
 	return f.client.HeaderByNumber(context.TODO(), nil)
+}
+
+func (f *BlockFetcher) Fetch() error {
+	fetcherErrors := make(chan error)
+
+	go func() {
+		for {
+			if err := f.FetchBlocks(); err != nil {
+				fetcherErrors <- err
+			}
+			fmt.Printf("Tokens remaining: %v\n", f.limiter.Tokens())
+		}
+	}()
+
+	if err := <-fetcherErrors; err != nil {
+		return err
+	}
+
+	return nil
 }
