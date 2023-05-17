@@ -203,7 +203,10 @@ func (r *BlockRepo) GetBlockHeader(n *big.Int) (*BlockHeader, error) {
 	WHERE number = ?`
 
 	rows, err := r.db.Query(q, n.Int64())
-	if err != nil {
+	switch {
+	case err == sql.ErrNoRows:
+		return nil, nil
+	case err != nil:
 		return nil, err
 	}
 	defer rows.Close()
@@ -224,6 +227,7 @@ func (r *BlockRepo) GetBlockHeader(n *big.Int) (*BlockHeader, error) {
 		}
 
 		h = new(BlockHeader)
+		h.TransactionHashes = []string{}
 
 		h.Time = timestamp
 
@@ -243,4 +247,48 @@ func (r *BlockRepo) GetBlockHeader(n *big.Int) (*BlockHeader, error) {
 	}
 
 	return h, nil
+}
+
+func (r *BlockRepo) GetTransaction(hash string) (*Transaction, error) {
+	q := `SELECT hash, from_address, to_address, nonce, input, value, logs FROM transactions WHERE hash = ?`
+
+	t := &Transaction{}
+
+	var h []byte
+	var nonce, value int64
+	var logs []byte
+	err := r.db.QueryRow(q, hash).Scan(&h, &t.FromAddress, &t.ToAddress, &nonce, &t.Input, &value, &logs)
+
+	switch {
+	case err == sql.ErrNoRows:
+		return nil, nil
+	case err != nil:
+		return nil, err
+	}
+
+	if err := t.Hash.UnmarshalText(h); err != nil {
+		return nil, err
+	}
+
+	t.Nonce = big.NewInt(nonce)
+	t.Value = big.NewInt(value)
+
+	if err := json.Unmarshal(logs, &t.Logs); err != nil {
+		return nil, err
+	}
+
+	if t.Logs == nil {
+		t.Logs = []TransactionLog{}
+	}
+
+	return t, nil
+
+	// block_number DECIMAL(65) NOT NULL,
+	// hash VARCHAR(66) UNIQUE NOT NULL,
+	// from_address VARCHAR(42) NOT NULL,
+	// to_address VARCHAR(42),
+	// nonce DECIMAL(65) NOT NULL,
+	// input TEXT NOT NULL,
+	// value DECIMAL(65) NOT NULL,
+	// logs LONGBLOB,
 }

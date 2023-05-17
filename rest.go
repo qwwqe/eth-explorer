@@ -24,11 +24,40 @@ type GetBlockResponse struct {
 	TransactionHashes []string `json:"transactions"`
 }
 
+type GetTransactionResponse struct {
+	Hash        common.Hash      `json:"tx_hash"`
+	FromAddress string           `json:"from"`
+	ToAddress   string           `json:"to"`
+	Nonce       *big.Int         `json:"nonce"`
+	Value       *big.Int         `json:"value"`
+	Input       string           `json:"data"`
+	Logs        []TransactionLog `json:"logs"`
+}
+
 type SimpleBlockResponse struct {
 	Number     *big.Int    `json:"block_num"`
 	BlockHash  common.Hash `json:"block_hash"`
 	ParentHash common.Hash `json:"parent_hash"`
 	Time       uint64      `json:"block_time"`
+}
+
+type ErrorResponse struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+func NotFoundResponse() ErrorResponse {
+	return ErrorResponse{
+		Code:    "0001",
+		Message: "Entity not found",
+	}
+}
+
+func ClientErrorResponse() ErrorResponse {
+	return ErrorResponse{
+		Code:    "0003",
+		Message: "Invalid request",
+	}
 }
 
 func NewRestServer(repo *BlockRepo) *ApiServer {
@@ -41,6 +70,7 @@ func NewRestServer(repo *BlockRepo) *ApiServer {
 
 	e.GET("/blocks", s.getBlocksHandler)
 	e.GET("/blocks/:id", s.getBlockHandler)
+	e.GET("/transactions/:hash", s.getTransactionHandler)
 
 	s.blockRepo = repo
 	s.echo = e
@@ -86,12 +116,16 @@ func (s *ApiServer) getBlockHandler(c echo.Context) error {
 
 	number, ok := new(big.Int).SetString(numberString, 10)
 	if !ok {
-		return fmt.Errorf("Invalid block id `%s`", numberString)
+		return c.JSON(400, ClientErrorResponse())
 	}
 
 	block, err := s.blockRepo.GetBlockHeader(number)
 	if err != nil {
 		return err
+	}
+
+	if block == nil {
+		return c.JSON(404, NotFoundResponse())
 	}
 
 	response := GetBlockResponse{
@@ -102,6 +136,31 @@ func (s *ApiServer) getBlockHandler(c echo.Context) error {
 			Time:       block.Time,
 		},
 		TransactionHashes: block.TransactionHashes,
+	}
+
+	return c.JSON(200, response)
+}
+
+func (s *ApiServer) getTransactionHandler(c echo.Context) error {
+	hash := c.Param("hash")
+
+	transaction, err := s.blockRepo.GetTransaction(hash)
+	if err != nil {
+		return err
+	}
+
+	if transaction == nil {
+		return c.JSON(404, NotFoundResponse())
+	}
+
+	response := GetTransactionResponse{
+		Hash:        transaction.Hash,
+		FromAddress: transaction.FromAddress,
+		ToAddress:   transaction.ToAddress,
+		Nonce:       transaction.Nonce,
+		Value:       transaction.Value,
+		Input:       transaction.Input,
+		Logs:        transaction.Logs,
 	}
 
 	return c.JSON(200, response)
