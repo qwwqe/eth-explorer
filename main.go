@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/ethereum/go-ethereum/rpc"
@@ -64,7 +63,7 @@ func main() {
 	}()
 
 	go func() {
-		errChan <- restApi.echo.Start(fmt.Sprintf(":%s", config.ApiListenPort))
+		errChan <- restApi.Start(config.ApiListenPort)
 	}()
 
 	panic(<-errChan)

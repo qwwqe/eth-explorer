@@ -34,6 +34,8 @@ func (h *BlockHeader) UnmarshalJSON(b []byte) error {
 
 	var bh blockHeader
 	if err := json.Unmarshal(b, &bh); err != nil {
+		fmt.Println("b")
+
 		return err
 	}
 
@@ -90,6 +92,8 @@ func (t *Transaction) UnmarshalJSON(b []byte) error {
 
 	var tx transaction
 	if err := json.Unmarshal(b, &tx); err != nil {
+		fmt.Println("t")
+
 		return err
 	}
 
@@ -140,36 +144,8 @@ type TransactionReceipt struct {
 }
 
 type TransactionLog struct {
-	Index *big.Int `json:"logIndex"`
-	Data  string   `json:"data"`
-}
-
-func (l *TransactionLog) UnmarshalJSON(b []byte) error {
-	type log struct {
-		Index *json.RawMessage `json:"logIndex"`
-		Data  string           `json:"data"`
-	}
-
-	var tl log
-	if err := json.Unmarshal(b, &tl); err != nil {
-		return err
-	}
-
-	l.Data = tl.Data
-
-	if tl.Index != nil && string(*tl.Index) != "null" {
-
-		s := strings.Trim(string(*tl.Index), `"`)
-
-		i, ok := new(big.Int).SetString(s, 0)
-		if !ok {
-			return fmt.Errorf("Could not unmarshal `%s` into *big.Int", s)
-		}
-
-		l.Index = i
-	}
-
-	return nil
+	Index uint64 `json:"logIndex"`
+	Data  string `json:"data"`
 }
 
 type BlockFetcher struct {
@@ -333,7 +309,7 @@ func (f *BlockFetcher) PopulateTransactionLogs(transactions []*Transaction) erro
 			}
 			pending--
 		case err := <-receiptErrors:
-			return err
+			return fmt.Errorf("Error processing receipt: %v", err)
 		}
 	}
 
@@ -446,7 +422,8 @@ func (f *BlockFetcher) GetTransactionsByHash(hashes []string) ([]*Transaction, e
 
 func (f *BlockFetcher) GetTransactionReceipts(transactions []*Transaction) ([]*TransactionReceipt, error) {
 	methods := make([]rpc.BatchElem, len(transactions))
-	results := make([]*TransactionReceipt, len(transactions))
+	// see: https://github.com/ethereum/go-ethereum/issues/23132
+	results := make([]map[string]any, len(transactions))
 
 	for i, tx := range transactions {
 		methods[i] = rpc.BatchElem{
@@ -457,11 +434,13 @@ func (f *BlockFetcher) GetTransactionReceipts(transactions []*Transaction) ([]*T
 	}
 
 	if err := f.client.BatchCall(methods); err != nil {
+		fmt.Println("BATCH ERROR!!!")
 		return nil, err
 	}
 
 	for i, elem := range methods {
 		if elem.Error != nil {
+			fmt.Println("ELEM ERROR!!!")
 			return nil, elem.Error
 		}
 		if results[i] == nil {
@@ -469,7 +448,26 @@ func (f *BlockFetcher) GetTransactionReceipts(transactions []*Transaction) ([]*T
 		}
 	}
 
-	return results, nil
+	receipts := make([]*TransactionReceipt, 0, len(results))
+
+	for _, nativeReceipt := range results {
+		r := &TransactionReceipt{}
+		hash, ok := nativeReceipt["transactionHash"]
+		if !ok {
+			return nil, fmt.Errorf("Missing transaction hash field!!")
+		}
+		// r.TransactionHash = nativeReceipt.TxHash
+		r.TransactionHash.UnmarshalText([]byte(hash.(string)))
+		// r.TransactionHash, ok := common.Hash{}.UnmarshalJSON(hash)
+		// for _, l := range nativeReceipt.Logs {
+		// 	r.Logs = append(r.Logs, TransactionLog{
+		// 		Index: uint64(l.Index),
+		// 		Data:  string(l.Data),
+		// 	})
+		// }
+	}
+
+	return receipts, nil
 }
 
 func (f *BlockFetcher) Fetch() error {
