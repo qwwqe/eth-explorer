@@ -1,9 +1,10 @@
 package main
 
 import (
+	"context"
 	"time"
 
-	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/rpc"
 )
 
 type Config struct {
@@ -31,8 +32,13 @@ func main() {
 		RateLimitSeconds: time.Minute * 5,
 	}
 
-	// todo: 用rpcclient
-	client, err := ethclient.Dial(config.RpcNode)
+	// // todo: 用rpcclient
+	// client, err := ethclient.Dial(config.RpcNode)
+	// if err != nil {
+	// 	panic(err)
+	// }
+
+	client, err := rpc.DialContext(context.TODO(), config.RpcNode)
 	if err != nil {
 		panic(err)
 	}

@@ -2,24 +2,79 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
+	"strings"
 	"sync"
 
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/rpc"
 	"golang.org/x/time/rate"
 )
 
+type BlockHeader struct {
+	Number            *big.Int `json:"number"`
+	ParentHash        string   `json:"parentHash"`
+	Hash              string   `json:"hash"`
+	Time              uint64   `json:"timestamp"`
+	TransactionHashes []string `json:"transactions"`
+}
+
+func (h *BlockHeader) UnmarshalJSON(b []byte) error {
+	type blockHeader struct {
+		Number            *json.RawMessage `json:"number"`
+		ParentHash        string           `json:"parentHash"`
+		Hash              string           `json:"hash"`
+		Time              *json.RawMessage `json:"timestamp"`
+		TransactionHashes []string         `json:"transactions"`
+	}
+
+	var bh blockHeader
+	if err := json.Unmarshal(b, &bh); err != nil {
+		return err
+	}
+
+	h.ParentHash = bh.ParentHash
+	h.Hash = bh.Hash
+	h.TransactionHashes = bh.TransactionHashes
+
+	if bh.Number != nil && string(*bh.Number) != "null" {
+		s := strings.Trim(string(*bh.Number), `"`)
+
+		i, ok := new(big.Int).SetString(s, 0)
+		if !ok {
+			return fmt.Errorf("Could not unmarshal `%s` into *big.Int", s)
+		}
+
+		h.Number = i
+	}
+
+	if bh.Time != nil && string(*bh.Time) != "null" {
+		s := strings.Trim(string(*bh.Time), `"`)
+
+		t, ok := new(big.Int).SetString(s, 0)
+		if !ok {
+			return fmt.Errorf("Could not unmarshal `%s` into *big.Int", s)
+		}
+
+		h.Time = t.Uint64()
+	}
+
+	return nil
+}
+
 type BlockFetcher struct {
-	client  *ethclient.Client
+	client  *rpc.Client
 	repo    *BlockRepo
 	config  *Config
 	limiter *rate.Limiter
 }
 
-func NewBlockFetcher(client *ethclient.Client, repo *BlockRepo, config *Config) (*BlockFetcher, error) {
+func NewBlockFetcher(client *rpc.Client, repo *BlockRepo, config *Config) (*BlockFetcher, error) {
 	var fetchRate rate.Limit
 
 	if config.RateLimitSeconds.Seconds() <= 0 || config.RateLimitValue <= 0 {
@@ -45,7 +100,7 @@ func (f *BlockFetcher) FetchBlocks() error {
 		return err
 	}
 
-	fmt.Printf("Latest header: #%v (%v)\n", header.Number, header.Hash())
+	fmt.Printf("Latest header: #%v (%v)\n", header.Number, header.Hash)
 
 	newestFetchedBlockNumber, err := f.repo.NewestFetchedBlockNumber()
 	if err != nil {
@@ -89,7 +144,7 @@ func (f *BlockFetcher) FetchBlocks() error {
 		n := n
 		go func() {
 			f.limiter.WaitN(context.TODO(), 2)
-			block, err := f.client.BlockByNumber(context.TODO(), n)
+			block, err := ethclient.NewClient(f.client).BlockByNumber(context.TODO(), n)
 
 			if err != nil {
 				blockErrors <- err
@@ -123,8 +178,41 @@ func (f *BlockFetcher) FetchBlocks() error {
 	return nil
 }
 
-func (f *BlockFetcher) GetLatestHeader() (*types.Header, error) {
-	return f.client.HeaderByNumber(context.TODO(), nil)
+func (f *BlockFetcher) GetLatestHeader() (*BlockHeader, error) {
+	var header *BlockHeader
+	err := f.client.CallContext(context.TODO(), &header, "eth_getBlockByNumber", "latest", false)
+	if err == nil && header == nil {
+		return nil, ethereum.NotFound
+	}
+	return header, err
+}
+
+func (f *BlockFetcher) GetHeadersByNumber(numbers []*big.Int) ([]*BlockHeader, error) {
+	methods := make([]rpc.BatchElem, len(numbers))
+	results := make([]*BlockHeader, len(numbers))
+
+	for i, n := range numbers {
+		methods[i] = rpc.BatchElem{
+			Method: "eth_getBlockByNumber",
+			Args:   []interface{}{n, false},
+			Result: &results[i],
+		}
+	}
+
+	if err := f.client.BatchCall(methods); err != nil {
+		return nil, err
+	}
+
+	for i, elem := range methods {
+		if elem.Error != nil {
+			return nil, elem.Error
+		}
+		if results[i] == nil {
+			return nil, fmt.Errorf("Received null header for block %v", elem.Args[0])
+		}
+	}
+
+	return results, nil
 }
 
 func (f *BlockFetcher) Fetch() error {
