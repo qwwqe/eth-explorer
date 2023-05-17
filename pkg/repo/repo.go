@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"math"
 	"math/big"
 	"strings"
 
@@ -58,6 +59,10 @@ func (r *BlockRepo) SaveBlocks(blocks []*common.BlockHeader) error {
 }
 
 func (r *BlockRepo) SaveBlocksTx(tx *sql.Tx, blocks []*common.BlockHeader) error {
+	if len(blocks) == 0 {
+		return nil
+	}
+
 	values := []interface{}{}
 	var b strings.Builder
 
@@ -93,34 +98,48 @@ func (r *BlockRepo) SaveTransactions(transactions []*common.Transaction) error {
 }
 
 func (r *BlockRepo) SaveTransactionsTx(tx *sql.Tx, transactions []*common.Transaction) error {
-	values := []interface{}{}
-	var b strings.Builder
-
-	b.WriteString(`INSERT INTO transactions (block_number, hash, from_address, to_address, nonce, input, value, logs) VALUES `)
-
-	for i, t := range transactions {
-		fmt.Fprintf(&b, "(?, ?, ?, ?, ?, ?, ?, ?)")
-		if i < len(transactions)-1 {
-			fmt.Fprintf(&b, ",")
-		}
-		fmt.Fprintf(&b, " ")
-
-		logs, err := json.Marshal(t.Logs)
-		if err != nil {
-			return err
-		}
-
-		values = append(values,
-			t.BlockNumber.Int64(), t.Hash.Hex(), t.FromAddress, t.ToAddress,
-			t.Nonce.Int64(), t.Input, t.Value.Int64(), logs,
-		)
+	if len(transactions) == 0 {
+		return nil
 	}
 
-	q := b.String()
+	placeholderLimit := 65535
+	placeholders := 8
+	maxChunkSize := int(math.Floor(float64(placeholderLimit) / float64(placeholders)))
 
-	_, err := tx.Exec(q, values...)
+	for i := 0; i < len(transactions); i += maxChunkSize {
+		l, r := i, int(math.Min(float64(len(transactions)), float64(i+maxChunkSize)))
 
-	return err
+		values := []interface{}{}
+		var b strings.Builder
+
+		b.WriteString(`INSERT INTO transactions (block_number, hash, from_address, to_address, nonce, input, value, logs) VALUES `)
+
+		for i, t := range transactions[l:r] {
+			fmt.Fprintf(&b, `(?, ?, ?, ?, ?, ?, ?, ?)`)
+			if i < len(transactions[l:r])-1 {
+				fmt.Fprintf(&b, ",")
+			}
+			fmt.Fprintf(&b, " ")
+
+			logs, err := json.Marshal(t.Logs)
+			if err != nil {
+				return err
+			}
+
+			values = append(values,
+				t.BlockNumber.Int64(), t.Hash.Hex(), t.FromAddress, t.ToAddress,
+				t.Nonce.Int64(), t.Input, t.Value.Int64(), logs,
+			)
+		}
+
+		q := b.String()
+
+		if _, err := tx.Exec(q, values...); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (r *BlockRepo) NewestFetchedBlockNumber() (*big.Int, error) {
