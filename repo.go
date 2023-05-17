@@ -193,9 +193,54 @@ func (r *BlockRepo) MostRecentBlockHeaders(n int) ([]*BlockHeader, error) {
 	}
 
 	return headers, nil
+}
 
-	// number DECIMAL(65) UNIQUE,
-	// hash VARCHAR(66),
-	// parentHash VARCHAR(66) NOT NULL,
-	// timestamp BIGINT NOT NULL
+func (r *BlockRepo) GetBlockHeader(n *big.Int) (*BlockHeader, error) {
+	q := `SELECT b.number, b.hash, b.parentHash, b.timestamp, t.hash
+	FROM blocks AS b
+	JOIN transactions AS t
+	ON b.number = t.block_number
+	WHERE number = ?`
+
+	rows, err := r.db.Query(q, n.Int64())
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var h *BlockHeader
+
+	for rows.Next() {
+		var timestamp uint64
+		var hash, parentHash, transactionHash []byte
+		var number sql.NullInt64
+		if err := rows.Scan(&number, &hash, &parentHash, &timestamp, &transactionHash); err != nil {
+			return nil, err
+		}
+
+		if h != nil {
+			h.TransactionHashes = append(h.TransactionHashes, string(transactionHash))
+			continue
+		}
+
+		h = new(BlockHeader)
+
+		h.Time = timestamp
+
+		if err := h.Hash.UnmarshalText(hash); err != nil {
+			return nil, err
+		}
+
+		if err := h.ParentHash.UnmarshalText(parentHash); err != nil {
+			return nil, err
+		}
+
+		if number.Valid {
+			h.Number = big.NewInt(number.Int64)
+		}
+
+		h.TransactionHashes = append(h.TransactionHashes, string(transactionHash))
+	}
+
+	return h, nil
 }

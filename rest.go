@@ -19,6 +19,11 @@ type GetBlocksResponse struct {
 	Blocks []SimpleBlockResponse `json:"blocks"`
 }
 
+type GetBlockResponse struct {
+	SimpleBlockResponse
+	TransactionHashes []string `json:"transactions"`
+}
+
 type SimpleBlockResponse struct {
 	Number     *big.Int    `json:"block_num"`
 	BlockHash  common.Hash `json:"block_hash"`
@@ -34,7 +39,8 @@ func NewRestServer(repo *BlockRepo) *ApiServer {
 	e.Use(middleware.CORS())
 	e.Use(middleware.Gzip())
 
-	e.GET("/", s.getBlocksHandler)
+	e.GET("/blocks", s.getBlocksHandler)
+	e.GET("/blocks/:id", s.getBlockHandler)
 
 	s.blockRepo = repo
 	s.echo = e
@@ -70,6 +76,32 @@ func (s *ApiServer) getBlocksHandler(c echo.Context) error {
 			ParentHash: block.ParentHash,
 			Time:       block.Time,
 		})
+	}
+
+	return c.JSON(200, response)
+}
+
+func (s *ApiServer) getBlockHandler(c echo.Context) error {
+	numberString := c.Param("id")
+
+	number, ok := new(big.Int).SetString(numberString, 10)
+	if !ok {
+		return fmt.Errorf("Invalid block id `%s`", numberString)
+	}
+
+	block, err := s.blockRepo.GetBlockHeader(number)
+	if err != nil {
+		return err
+	}
+
+	response := GetBlockResponse{
+		SimpleBlockResponse: SimpleBlockResponse{
+			Number:     block.Number,
+			BlockHash:  block.Hash,
+			ParentHash: block.ParentHash,
+			Time:       block.Time,
+		},
+		TransactionHashes: block.TransactionHashes,
 	}
 
 	return c.JSON(200, response)
