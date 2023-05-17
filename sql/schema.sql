@@ -8,13 +8,13 @@ CREATE TABLE IF NOT EXISTS blocks (
 
 CREATE TABLE IF NOT EXISTS transactions (
   id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  block_id INT NOT NULL,
+  block_number DECIMAL(65) NOT NULL,
   hash VARCHAR(66) UNIQUE NOT NULL,
-  from_address VARCHAR(20) NOT NULL,
-  to_address VARCHAR(20),
+  from_address VARCHAR(42) NOT NULL,
+  to_address VARCHAR(42),
   nonce DECIMAL(65) NOT NULL,
   input TEXT NOT NULL,
   value DECIMAL(65) NOT NULL,
   logs TEXT,
-  FOREIGN KEY (block_id) REFERENCES blocks(id) ON DELETE CASCADE
+  FOREIGN KEY (block_number) REFERENCES blocks(number) ON DELETE CASCADE
 );

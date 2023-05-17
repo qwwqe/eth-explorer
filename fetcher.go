@@ -67,17 +67,19 @@ func (h *BlockHeader) UnmarshalJSON(b []byte) error {
 }
 
 type Transaction struct {
-	Hash        common.Hash        `json:"hash"`
-	FromAddress string             `json:"from"`
-	ToAddress   string             `json:"to"`
-	Nonce       *big.Int           `json:"nonce"`
-	Value       *big.Int           `json:"value"`
-	Input       string             `json:"data"`
-	Logs        []*json.RawMessage `json:"logs"`
+	BlockNumber *big.Int         `json:"blockNumber"`
+	Hash        common.Hash      `json:"hash"`
+	FromAddress string           `json:"from"`
+	ToAddress   string           `json:"to"`
+	Nonce       *big.Int         `json:"nonce"`
+	Value       *big.Int         `json:"value"`
+	Input       string           `json:"data"`
+	Logs        []TransactionLog `json:"logs"`
 }
 
 func (t *Transaction) UnmarshalJSON(b []byte) error {
 	type transaction struct {
+		BlockNumber *json.RawMessage `json:"blockNumber"`
 		Hash        common.Hash      `json:"hash"`
 		FromAddress string           `json:"from"`
 		ToAddress   string           `json:"to"`
@@ -95,6 +97,17 @@ func (t *Transaction) UnmarshalJSON(b []byte) error {
 	t.FromAddress = tx.FromAddress
 	t.ToAddress = tx.ToAddress
 	t.Input = tx.Input
+
+	if tx.BlockNumber != nil && string(*tx.BlockNumber) != "null" {
+		s := strings.Trim(string(*tx.BlockNumber), `"`)
+
+		i, ok := new(big.Int).SetString(s, 0)
+		if !ok {
+			return fmt.Errorf("Could not unmarshal `%s` into *big.Int", s)
+		}
+
+		t.BlockNumber = i
+	}
 
 	if tx.Nonce != nil && string(*tx.Nonce) != "null" {
 		s := strings.Trim(string(*tx.Nonce), `"`)
@@ -122,8 +135,41 @@ func (t *Transaction) UnmarshalJSON(b []byte) error {
 }
 
 type TransactionReceipt struct {
-	TransactionHash common.Hash        `json:"transactionHash"`
-	Logs            []*json.RawMessage `json:"logs"`
+	TransactionHash common.Hash      `json:"transactionHash"`
+	Logs            []TransactionLog `json:"logs"`
+}
+
+type TransactionLog struct {
+	Index *big.Int `json:"logIndex"`
+	Data  string   `json:"data"`
+}
+
+func (l *TransactionLog) UnmarshalJSON(b []byte) error {
+	type log struct {
+		Index *json.RawMessage `json:"logIndex"`
+		Data  string           `json:"data"`
+	}
+
+	var tl log
+	if err := json.Unmarshal(b, &tl); err != nil {
+		return err
+	}
+
+	l.Data = tl.Data
+
+	if tl.Index != nil && string(*tl.Index) != "null" {
+
+		s := strings.Trim(string(*tl.Index), `"`)
+
+		i, ok := new(big.Int).SetString(s, 0)
+		if !ok {
+			return fmt.Errorf("Could not unmarshal `%s` into *big.Int", s)
+		}
+
+		l.Index = i
+	}
+
+	return nil
 }
 
 type BlockFetcher struct {
@@ -179,7 +225,10 @@ func (f *BlockFetcher) FetchBlocks() ([]*BlockHeader, error) {
 
 	p := make([]*big.Int, 0, f.config.HeaderBatchSize)
 
-	newBlocks := new(big.Int).Sub(header.Number, newestFetchedBlockNumber).Int64()
+	newBlocks := int64(math.Min(
+		float64(f.config.HeaderBatchSize),
+		float64(new(big.Int).Sub(header.Number, newestFetchedBlockNumber).Int64()),
+	))
 	for i := int64(1); i <= newBlocks && len(p) < f.config.HeaderBatchSize; i++ {
 		p = append(p, new(big.Int).Add(newestFetchedBlockNumber, big.NewInt(i)))
 	}
@@ -257,8 +306,8 @@ func (f *BlockFetcher) PopulateTransactionLogs(transactions []*Transaction) erro
 		lookup[t.Hash.Hex()] = t
 	}
 
-	for i := 0; i < len(transactions); i += f.config.TxBatchSize {
-		l, r := i, int(math.Min(float64(len(transactions)-1), float64(i+f.config.TxBatchSize)))
+	for i := 0; i < len(transactions); i += f.config.LogBatchSize {
+		l, r := i, int(math.Min(float64(len(transactions)-1), float64(i+f.config.LogBatchSize)))
 		pending++
 		go func() {
 			f.limiter.Wait(context.TODO())
@@ -311,6 +360,10 @@ func (f *BlockFetcher) FetchAll() error {
 	}
 
 	if err := f.repo.SaveBlocks(blockHeaders); err != nil {
+		return err
+	}
+
+	if err := f.repo.SaveTransactions(transactions); err != nil {
 		return err
 	}
 

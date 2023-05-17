@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"strings"
@@ -46,6 +47,37 @@ func (r *BlockRepo) SaveBlocks(blocks []*BlockHeader) error {
 		}
 		fmt.Fprintf(&b, " ")
 		values = append(values, v.Number.Int64(), v.Hash.Hex(), v.ParentHash.Hex(), v.Time)
+	}
+
+	q := b.String()
+
+	_, err := r.db.Exec(q, values...)
+
+	return err
+}
+
+func (r *BlockRepo) SaveTransactions(transactions []*Transaction) error {
+	values := []interface{}{}
+	var b strings.Builder
+
+	b.WriteString(`INSERT INTO transactions (block_number, hash, from_address, to_address, nonce, input, value, logs) VALUES `)
+
+	for i, t := range transactions {
+		fmt.Fprintf(&b, "(?, ?, ?, ?, ?, ?, ?, ?)")
+		if i < len(transactions)-1 {
+			fmt.Fprintf(&b, ",")
+		}
+		fmt.Fprintf(&b, " ")
+
+		logs, err := json.Marshal(t.Logs)
+		if err != nil {
+			return err
+		}
+
+		values = append(values,
+			t.BlockNumber.Int64(), t.Hash.Hex(), t.FromAddress, t.ToAddress,
+			t.Nonce.Int64(), t.Input, t.Value.Int64(), logs,
+		)
 	}
 
 	q := b.String()
