@@ -14,7 +14,8 @@ type Config struct {
 	DbPassword       string        `env:"ETHEXPLORER_DB_PASSWORD"`
 	DbName           string        `env:"ETHEXPLORER_DB_NAME"`
 	RpcNode          string        `env:"ETHEXPLORER_RPC_NODE"`
-	BatchSize        int           `env:"ETHEXPLORER_BATCH_SIZE"`
+	HeaderBatchSize  int           `env:"ETHEXPLORER_HEADER_BATCH_SIZE"`
+	TxBatchSize      int           `env:"ETHEXPLORER_TX_BATCH_SIZE"`
 	RateLimitValue   int           `env:"ETHEXPLORER_RATE_LIMIT_VALUE"`
 	RateLimitSeconds time.Duration `env:"ETHEXPLORER_RATE_LIMIT_SECONDS"`
 }
@@ -27,7 +28,8 @@ func main() {
 		DbPassword:       "eth",
 		DbName:           "eth",
 		RpcNode:          "https://data-seed-prebsc-1-s1.binance.org:8545/",
-		BatchSize:        500,
+		HeaderBatchSize:  500,
+		TxBatchSize:      500,
 		RateLimitValue:   10000,
 		RateLimitSeconds: time.Minute * 5,
 	}
