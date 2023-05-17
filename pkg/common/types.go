@@ -44,8 +44,6 @@ func (h *BlockHeader) UnmarshalJSON(b []byte) error {
 
 	var bh blockHeader
 	if err := json.Unmarshal(b, &bh); err != nil {
-		fmt.Println("b")
-
 		return err
 	}
 
@@ -102,8 +100,6 @@ func (t *Transaction) UnmarshalJSON(b []byte) error {
 
 	var tx transaction
 	if err := json.Unmarshal(b, &tx); err != nil {
-		fmt.Println("t")
-
 		return err
 	}
 
@@ -154,6 +150,34 @@ type TransactionReceipt struct {
 }
 
 type TransactionLog struct {
-	Index uint64 `json:"logIndex"`
-	Data  string `json:"data"`
+	Index *big.Int `json:"logIndex"`
+	Data  string   `json:"data"`
+}
+
+func (l *TransactionLog) UnmarshalJSON(b []byte) error {
+	type log struct {
+		Index *json.RawMessage `json:"logIndex"`
+		Data  string           `json:"data"`
+	}
+
+	var tl log
+	if err := json.Unmarshal(b, &tl); err != nil {
+		return err
+	}
+
+	l.Data = tl.Data
+
+	if tl.Index != nil && string(*tl.Index) != "null" {
+
+		s := strings.Trim(string(*tl.Index), `"`)
+
+		i, ok := new(big.Int).SetString(s, 0)
+		if !ok {
+			return fmt.Errorf("Could not unmarshal `%s` into *big.Int", s)
+		}
+
+		l.Index = i
+	}
+
+	return nil
 }

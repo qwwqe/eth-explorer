@@ -283,13 +283,4 @@ func (r *BlockRepo) GetTransaction(hash string) (*common.Transaction, error) {
 	}
 
 	return t, nil
-
-	// block_number DECIMAL(65) NOT NULL,
-	// hash VARCHAR(66) UNIQUE NOT NULL,
-	// from_address VARCHAR(42) NOT NULL,
-	// to_address VARCHAR(42),
-	// nonce DECIMAL(65) NOT NULL,
-	// input TEXT NOT NULL,
-	// value DECIMAL(65) NOT NULL,
-	// logs LONGBLOB,
 }

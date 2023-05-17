@@ -40,9 +40,7 @@ func NewBlockFetcher(client *rpc.Client, repo *repo.BlockRepo, config *common.Co
 }
 
 func (f *BlockFetcher) FetchBlocks() ([]*common.BlockHeader, error) {
-	if err := f.limiter.Wait(context.TODO()); err != nil {
-		return nil, err
-	}
+	f.limiter.Wait(context.TODO())
 
 	header, err := f.GetLatestHeader()
 	if err != nil {
@@ -76,10 +74,14 @@ func (f *BlockFetcher) FetchBlocks() ([]*common.BlockHeader, error) {
 	}
 
 	oldBlocks := int64(f.config.HeaderBatchSize - len(p))
+	bigZero := big.NewInt(0)
 	if oldestFetchedBlockNumber != nil && len(p) < f.config.HeaderBatchSize {
 		for i := int64(1); i <= oldBlocks && len(p) < f.config.HeaderBatchSize; i++ {
-			// todo: deal with negative block numbers
-			p = append(p, new(big.Int).Sub(oldestFetchedBlockNumber, big.NewInt(i)))
+			n := new(big.Int).Sub(oldestFetchedBlockNumber, big.NewInt(i))
+			if n.Cmp(bigZero) < 0 {
+				break
+			}
+			p = append(p, n)
 		}
 	}
 
@@ -107,11 +109,12 @@ func (f *BlockFetcher) FetchTransactions(headers []*common.BlockHeader) ([]*comm
 	transactions := make([]*common.Transaction, 0, len(transactionHashes))
 	transactionResults := make(chan []*common.Transaction)
 	transactionErrors := make(chan error)
-	pending := 0
 
+	pending := 0
 	for i := 0; i < len(transactionHashes); i += f.config.TxBatchSize {
-		l, r := i, int(math.Min(float64(len(transactionHashes)-1), float64(i+f.config.TxBatchSize)))
 		pending++
+		l, r := i, int(math.Min(float64(len(transactionHashes)-1), float64(i+f.config.TxBatchSize)))
+
 		go func() {
 			f.limiter.Wait(context.TODO())
 			txs, err := f.GetTransactionsByHash(transactionHashes[l:r])
@@ -140,17 +143,17 @@ func (f *BlockFetcher) FetchTransactions(headers []*common.BlockHeader) ([]*comm
 func (f *BlockFetcher) PopulateTransactionLogs(transactions []*common.Transaction) error {
 	receiptResults := make(chan []*common.TransactionReceipt)
 	receiptErrors := make(chan error)
-	pending := 0
 
 	lookup := map[string]*common.Transaction{}
-
 	for _, t := range transactions {
 		lookup[t.Hash.Hex()] = t
 	}
 
+	pending := 0
 	for i := 0; i < len(transactions); i += f.config.LogBatchSize {
-		l, r := i, int(math.Min(float64(len(transactions)-1), float64(i+f.config.LogBatchSize)))
 		pending++
+		l, r := i, int(math.Min(float64(len(transactions)-1), float64(i+f.config.LogBatchSize)))
+
 		go func() {
 			f.limiter.Wait(context.TODO())
 			rs, err := f.GetTransactionReceipts(transactions[l:r])
@@ -231,6 +234,10 @@ func (f *BlockFetcher) GetLatestHeader() (*common.BlockHeader, error) {
 }
 
 func (f *BlockFetcher) GetHeadersByNumber(numbers []*big.Int) ([]*common.BlockHeader, error) {
+	if len(numbers) == 0 {
+		return []*common.BlockHeader{}, nil
+	}
+
 	methods := make([]rpc.BatchElem, len(numbers))
 	results := make([]*common.BlockHeader, len(numbers))
 
@@ -242,25 +249,21 @@ func (f *BlockFetcher) GetHeadersByNumber(numbers []*big.Int) ([]*common.BlockHe
 		}
 	}
 
-	if err := f.client.BatchCall(methods); err != nil {
+	if err := f.batchCall(methods); err != nil {
 		return nil, err
-	}
-
-	for i, elem := range methods {
-		if elem.Error != nil {
-			return nil, elem.Error
-		}
-		if results[i] == nil {
-			return nil, fmt.Errorf("Received null header for block %v", elem.Args[0])
-		}
 	}
 
 	return results, nil
 }
 
 func (f *BlockFetcher) GetTransactionsByHash(hashes []string) ([]*common.Transaction, error) {
+	if len(hashes) == 0 {
+		return []*common.Transaction{}, nil
+	}
+
 	methods := make([]rpc.BatchElem, len(hashes))
 	results := make([]*common.Transaction, len(hashes))
+	anyResults := make([]any, len(hashes))
 
 	for i, h := range hashes {
 		methods[i] = rpc.BatchElem{
@@ -268,28 +271,23 @@ func (f *BlockFetcher) GetTransactionsByHash(hashes []string) ([]*common.Transac
 			Args:   []interface{}{h},
 			Result: &results[i],
 		}
+		anyResults = append(anyResults, any(results[i]))
 	}
 
-	if err := f.client.BatchCall(methods); err != nil {
+	if err := f.batchCall(methods); err != nil {
 		return nil, err
-	}
-
-	for i, elem := range methods {
-		if elem.Error != nil {
-			return nil, elem.Error
-		}
-		if results[i] == nil {
-			return nil, fmt.Errorf("Received null header for block %v", elem.Args[0])
-		}
 	}
 
 	return results, nil
 }
 
 func (f *BlockFetcher) GetTransactionReceipts(transactions []*common.Transaction) ([]*common.TransactionReceipt, error) {
+	if len(transactions) == 0 {
+		return []*common.TransactionReceipt{}, nil
+	}
+
 	methods := make([]rpc.BatchElem, len(transactions))
-	// see: https://github.com/ethereum/go-ethereum/issues/23132
-	results := make([]map[string]any, len(transactions))
+	results := make([]*common.TransactionReceipt, len(transactions))
 
 	for i, tx := range transactions {
 		methods[i] = rpc.BatchElem{
@@ -299,41 +297,28 @@ func (f *BlockFetcher) GetTransactionReceipts(transactions []*common.Transaction
 		}
 	}
 
-	if err := f.client.BatchCall(methods); err != nil {
-		fmt.Println("BATCH ERROR!!!")
+	if err := f.batchCall(methods); err != nil {
 		return nil, err
 	}
 
-	for i, elem := range methods {
+	return results, nil
+}
+
+func (f *BlockFetcher) batchCall(methods []rpc.BatchElem) error {
+	if err := f.client.BatchCall(methods); err != nil {
+		return err
+	}
+
+	for _, elem := range methods {
 		if elem.Error != nil {
-			fmt.Println("ELEM ERROR!!!")
-			return nil, elem.Error
+			return elem.Error
 		}
-		if results[i] == nil {
-			return nil, fmt.Errorf("Received null header for block %v", elem.Args[0])
+		if elem.Result == nil {
+			return fmt.Errorf("Received null response for %v", elem.Args[0])
 		}
 	}
 
-	receipts := make([]*common.TransactionReceipt, 0, len(results))
-
-	for _, nativeReceipt := range results {
-		r := &common.TransactionReceipt{}
-		hash, ok := nativeReceipt["transactionHash"]
-		if !ok {
-			return nil, fmt.Errorf("Missing transaction hash field!!")
-		}
-		// r.TransactionHash = nativeReceipt.TxHash
-		r.TransactionHash.UnmarshalText([]byte(hash.(string)))
-		// r.TransactionHash, ok := common.Hash{}.UnmarshalJSON(hash)
-		// for _, l := range nativeReceipt.Logs {
-		// 	r.Logs = append(r.Logs, TransactionLog{
-		// 		Index: uint64(l.Index),
-		// 		Data:  string(l.Data),
-		// 	})
-		// }
-	}
-
-	return receipts, nil
+	return nil
 }
 
 func (f *BlockFetcher) Fetch() error {
