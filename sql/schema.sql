@@ -15,6 +15,6 @@ CREATE TABLE IF NOT EXISTS transactions (
   nonce DECIMAL(65) NOT NULL,
   input TEXT NOT NULL,
   value DECIMAL(65) NOT NULL,
-  logs TEXT,
+  logs LONGBLOB,
   FOREIGN KEY (block_number) REFERENCES blocks(number) ON DELETE CASCADE
 );

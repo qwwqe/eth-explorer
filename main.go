@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/ethereum/go-ethereum/rpc"
@@ -19,6 +20,7 @@ type Config struct {
 	LogBatchSize     int           `env:"ETHEXPLORER_LOG_BATCH_SIZE"`
 	RateLimitValue   int           `env:"ETHEXPLORER_RATE_LIMIT_VALUE"`
 	RateLimitSeconds time.Duration `env:"ETHEXPLORER_RATE_LIMIT_SECONDS"`
+	ApiListenPort    string        `env:"ETHEXPLORER_API_LISTEN_PORT"`
 }
 
 func main() {
@@ -34,6 +36,7 @@ func main() {
 		LogBatchSize:     100,
 		RateLimitValue:   10000,
 		RateLimitSeconds: time.Minute * 5,
+		ApiListenPort:    "8080",
 	}
 
 	client, err := rpc.DialContext(context.TODO(), config.RpcNode)
@@ -52,7 +55,17 @@ func main() {
 		panic(err)
 	}
 
-	if err := fetcher.Fetch(); err != nil {
-		panic(err)
-	}
+	restApi := NewRestServer(repo)
+
+	errChan := make(chan error)
+
+	go func() {
+		errChan <- fetcher.Fetch()
+	}()
+
+	go func() {
+		errChan <- restApi.echo.Start(fmt.Sprintf(":%s", config.ApiListenPort))
+	}()
+
+	panic(<-errChan)
 }

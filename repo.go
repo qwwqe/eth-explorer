@@ -157,3 +157,45 @@ func (r *BlockRepo) OldestFetchedBlockNumber() (*big.Int, error) {
 
 	return nil, nil
 }
+
+func (r *BlockRepo) MostRecentBlockHeaders(n int) ([]*BlockHeader, error) {
+	q := `SELECT number, hash, parentHash, timestamp FROM blocks ORDER BY number DESC LIMIT ?`
+
+	rows, err := r.db.Query(q, n)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	headers := []*BlockHeader{}
+
+	for rows.Next() {
+		var h BlockHeader
+		var hash, parentHash []byte
+		var number sql.NullInt64
+		if err := rows.Scan(&number, &hash, &parentHash, &h.Time); err != nil {
+			return nil, err
+		}
+
+		if err := h.Hash.UnmarshalText(hash); err != nil {
+			return nil, err
+		}
+
+		if err := h.ParentHash.UnmarshalText(parentHash); err != nil {
+			return nil, err
+		}
+
+		if number.Valid {
+			h.Number = big.NewInt(number.Int64)
+		}
+
+		headers = append(headers, &h)
+	}
+
+	return headers, nil
+
+	// number DECIMAL(65) UNIQUE,
+	// hash VARCHAR(66),
+	// parentHash VARCHAR(66) NOT NULL,
+	// timestamp BIGINT NOT NULL
+}
