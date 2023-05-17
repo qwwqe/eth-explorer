@@ -6,7 +6,6 @@ import (
 	"math/big"
 	"strings"
 
-	"github.com/ethereum/go-ethereum/core/types"
 	_ "github.com/go-sql-driver/mysql"
 )
 
@@ -34,7 +33,7 @@ func (r *BlockRepo) Open(config *Config) error {
 	return nil
 }
 
-func (r *BlockRepo) SaveBlocks(blocks []*types.Block) error {
+func (r *BlockRepo) SaveBlocks(blocks []*BlockHeader) error {
 	values := []interface{}{}
 	var b strings.Builder
 
@@ -46,7 +45,7 @@ func (r *BlockRepo) SaveBlocks(blocks []*types.Block) error {
 			fmt.Fprintf(&b, ",")
 		}
 		fmt.Fprintf(&b, " ")
-		values = append(values, v.Number().Int64(), v.Hash().String(), v.ParentHash().String(), v.Time())
+		values = append(values, v.Number.Int64(), v.Hash.Hex(), v.ParentHash.Hex(), v.Time)
 	}
 
 	q := b.String()

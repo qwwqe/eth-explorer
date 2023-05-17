@@ -27,16 +27,10 @@ func main() {
 		DbPassword:       "eth",
 		DbName:           "eth",
 		RpcNode:          "https://data-seed-prebsc-1-s1.binance.org:8545/",
-		BatchSize:        25,
+		BatchSize:        500,
 		RateLimitValue:   10000,
 		RateLimitSeconds: time.Minute * 5,
 	}
-
-	// // todo: 用rpcclient
-	// client, err := ethclient.Dial(config.RpcNode)
-	// if err != nil {
-	// 	panic(err)
-	// }
 
 	client, err := rpc.DialContext(context.TODO(), config.RpcNode)
 	if err != nil {

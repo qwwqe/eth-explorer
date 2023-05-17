@@ -7,28 +7,26 @@ import (
 	"fmt"
 	"math/big"
 	"strings"
-	"sync"
 
 	"github.com/ethereum/go-ethereum"
-	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/rpc"
 	"golang.org/x/time/rate"
 )
 
 type BlockHeader struct {
-	Number            *big.Int `json:"number"`
-	ParentHash        string   `json:"parentHash"`
-	Hash              string   `json:"hash"`
-	Time              uint64   `json:"timestamp"`
-	TransactionHashes []string `json:"transactions"`
+	Number            *big.Int    `json:"number"`
+	ParentHash        common.Hash `json:"parentHash"`
+	Hash              common.Hash `json:"hash"`
+	Time              uint64      `json:"timestamp"`
+	TransactionHashes []string    `json:"transactions"`
 }
 
 func (h *BlockHeader) UnmarshalJSON(b []byte) error {
 	type blockHeader struct {
 		Number            *json.RawMessage `json:"number"`
-		ParentHash        string           `json:"parentHash"`
-		Hash              string           `json:"hash"`
+		ParentHash        common.Hash      `json:"parentHash"`
+		Hash              common.Hash      `json:"hash"`
 		Time              *json.RawMessage `json:"timestamp"`
 		TransactionHashes []string         `json:"transactions"`
 	}
@@ -134,44 +132,52 @@ func (f *BlockFetcher) FetchBlocks() error {
 		}
 	}
 
-	blockErrors := make(chan error)
-	blockCompletions := make(chan struct{})
+	// 幣安的rate limit好像是針對HTTP請求而言（無論payload多少rpc method）
+	f.limiter.Wait(context.TODO())
 
-	blockResponses := new([]*types.Block)
-	blockResponseMut := sync.Mutex{}
-
-	for _, n := range p {
-		n := n
-		go func() {
-			f.limiter.WaitN(context.TODO(), 2)
-			block, err := ethclient.NewClient(f.client).BlockByNumber(context.TODO(), n)
-
-			if err != nil {
-				blockErrors <- err
-				return
-			}
-			fmt.Printf("Received block: %v (%v)\n", block.Number(), block.Hash())
-
-			blockResponseMut.Lock()
-			*blockResponses = append(*blockResponses, block)
-			blockResponseMut.Unlock()
-
-			blockCompletions <- struct{}{}
-		}()
+	blockHeaders, err := f.GetHeadersByNumber(p)
+	if err != nil {
+		return err
 	}
 
-	pending := len(p)
+	// blockErrors := make(chan error)
+	// blockCompletions := make(chan struct{})
 
-	for pending > 0 {
-		select {
-		case <-blockCompletions:
-			pending--
-		case err := <-blockErrors:
-			return err
-		}
-	}
+	// blockResponses := new([]*types.Block)
+	// blockResponseMut := sync.Mutex{}
 
-	if err := f.repo.SaveBlocks(*blockResponses); err != nil {
+	// for _, n := range p {
+	// 	n := n
+	// 	go func() {
+	// 		f.limiter.WaitN(context.TODO(), 2)
+	// 		block, err := ethclient.NewClient(f.client).BlockByNumber(context.TODO(), n)
+
+	// 		if err != nil {
+	// 			blockErrors <- err
+	// 			return
+	// 		}
+	// 		fmt.Printf("Received block: %v (%v)\n", block.Number(), block.Hash())
+
+	// 		blockResponseMut.Lock()
+	// 		*blockResponses = append(*blockResponses, block)
+	// 		blockResponseMut.Unlock()
+
+	// 		blockCompletions <- struct{}{}
+	// 	}()
+	// }
+
+	// pending := len(p)
+
+	// for pending > 0 {
+	// 	select {
+	// 	case <-blockCompletions:
+	// 		pending--
+	// 	case err := <-blockErrors:
+	// 		return err
+	// 	}
+	// }
+
+	if err := f.repo.SaveBlocks(blockHeaders); err != nil {
 		return err
 	}
 
@@ -194,7 +200,7 @@ func (f *BlockFetcher) GetHeadersByNumber(numbers []*big.Int) ([]*BlockHeader, e
 	for i, n := range numbers {
 		methods[i] = rpc.BatchElem{
 			Method: "eth_getBlockByNumber",
-			Args:   []interface{}{n, false},
+			Args:   []interface{}{fmt.Sprint("0x", n.Text(16)), false},
 			Result: &results[i],
 		}
 	}
