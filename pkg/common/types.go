@@ -5,24 +5,23 @@ import (
 	"fmt"
 	"math/big"
 	"strings"
-	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 )
 
 type Config struct {
-	DbHost           string        `env:"ETHEXPLORER_DB_HOST"`
-	DbPort           string        `env:"ETHEXPLORER_DB_PORT"`
-	DbUser           string        `env:"ETHEXPLORER_DB_USER"`
-	DbPassword       string        `env:"ETHEXPLORER_DB_PASSWORD"`
-	DbName           string        `env:"ETHEXPLORER_DB_NAME"`
-	RpcNode          string        `env:"ETHEXPLORER_RPC_NODE"`
-	HeaderBatchSize  int           `env:"ETHEXPLORER_HEADER_BATCH_SIZE"`
-	TxBatchSize      int           `env:"ETHEXPLORER_TX_BATCH_SIZE"`
-	LogBatchSize     int           `env:"ETHEXPLORER_LOG_BATCH_SIZE"`
-	RateLimitValue   int           `env:"ETHEXPLORER_RATE_LIMIT_VALUE"`
-	RateLimitSeconds time.Duration `env:"ETHEXPLORER_RATE_LIMIT_SECONDS"`
-	ApiListenPort    string        `env:"ETHEXPLORER_API_LISTEN_PORT"`
+	DbHost           string `env:"ETHEXPLORER_DB_HOST"`
+	DbPort           string `env:"ETHEXPLORER_DB_PORT"`
+	DbUser           string `env:"ETHEXPLORER_DB_USER"`
+	DbPassword       string `env:"ETHEXPLORER_DB_PASSWORD"`
+	DbName           string `env:"ETHEXPLORER_DB_NAME"`
+	RpcNode          string `env:"ETHEXPLORER_RPC_NODE"`
+	HeaderBatchSize  int    `env:"ETHEXPLORER_HEADER_BATCH_SIZE"`
+	TxBatchSize      int    `env:"ETHEXPLORER_TX_BATCH_SIZE"`
+	LogBatchSize     int    `env:"ETHEXPLORER_LOG_BATCH_SIZE"`
+	RateLimitValue   int    `env:"ETHEXPLORER_RATE_LIMIT_VALUE"`
+	RateLimitSeconds int    `env:"ETHEXPLORER_RATE_LIMIT_SECONDS"`
+	ApiListenPort    string `env:"ETHEXPLORER_API_LISTEN_PORT"`
 }
 
 type BlockHeader struct {

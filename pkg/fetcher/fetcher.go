@@ -24,13 +24,13 @@ type BlockFetcher struct {
 func NewBlockFetcher(client *rpc.Client, repo *repo.BlockRepo, config *common.Config) (*BlockFetcher, error) {
 	var fetchRate rate.Limit
 
-	if config.RateLimitSeconds.Seconds() <= 0 || config.RateLimitValue <= 0 {
+	if config.RateLimitSeconds <= 0 || config.RateLimitValue <= 0 {
 		fetchRate = rate.Inf
 	} else {
-		fetchRate = rate.Limit(config.RateLimitValue / int(config.RateLimitSeconds.Seconds()))
+		fetchRate = rate.Limit(config.RateLimitValue / int(config.RateLimitSeconds))
 	}
 
-	if fetchRate == 0 && (config.RateLimitValue != 0 || config.RateLimitSeconds.Seconds() != 0) {
+	if fetchRate == 0 && (config.RateLimitValue != 0 || config.RateLimitSeconds != 0) {
 		return nil, errors.New(fmt.Sprintf("Fetching rate limit cannot be less than one event per second"))
 	}
 
