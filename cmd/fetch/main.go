@@ -8,7 +8,6 @@ import (
 	"github.com/qwwqe/eth-explorer/pkg/common"
 	"github.com/qwwqe/eth-explorer/pkg/fetcher"
 	"github.com/qwwqe/eth-explorer/pkg/repo"
-	"github.com/qwwqe/eth-explorer/pkg/rest"
 )
 
 func main() {
@@ -43,17 +42,5 @@ func main() {
 		panic(err)
 	}
 
-	restApi := rest.NewRestServer(repo)
-
-	errChan := make(chan error)
-
-	go func() {
-		errChan <- fetcher.Fetch()
-	}()
-
-	go func() {
-		errChan <- restApi.Start(config.ApiListenPort)
-	}()
-
-	panic(<-errChan)
+	panic(fetcher.Fetch())
 }
