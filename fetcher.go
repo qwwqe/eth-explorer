@@ -359,11 +359,20 @@ func (f *BlockFetcher) FetchAll() error {
 		return err
 	}
 
-	if err := f.repo.SaveBlocks(blockHeaders); err != nil {
+	tx, err := f.repo.BeginTx(context.TODO())
+	if err != nil {
 		return err
 	}
 
-	if err := f.repo.SaveTransactions(transactions); err != nil {
+	if err := f.repo.SaveBlocksTx(tx, blockHeaders); err != nil {
+		return err
+	}
+
+	if err := f.repo.SaveTransactionsTx(tx, transactions); err != nil {
+		return err
+	}
+
+	if err := f.repo.CommitTx(tx); err != nil {
 		return err
 	}
 

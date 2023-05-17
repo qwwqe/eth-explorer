@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -34,7 +35,28 @@ func (r *BlockRepo) Open(config *Config) error {
 	return nil
 }
 
+func (r *BlockRepo) BeginTx(ctx context.Context) (*sql.Tx, error) {
+	return r.db.BeginTx(ctx, nil)
+}
+
+func (r *BlockRepo) CommitTx(tx *sql.Tx) error {
+	return tx.Commit()
+}
+
 func (r *BlockRepo) SaveBlocks(blocks []*BlockHeader) error {
+	tx, err := r.BeginTx(context.TODO())
+	if err != nil {
+		return err
+	}
+
+	if err := r.SaveBlocksTx(tx, blocks); err != nil {
+		return err
+	}
+
+	return r.CommitTx(tx)
+}
+
+func (r *BlockRepo) SaveBlocksTx(tx *sql.Tx, blocks []*BlockHeader) error {
 	values := []interface{}{}
 	var b strings.Builder
 
@@ -51,12 +73,25 @@ func (r *BlockRepo) SaveBlocks(blocks []*BlockHeader) error {
 
 	q := b.String()
 
-	_, err := r.db.Exec(q, values...)
+	_, err := tx.Exec(q, values...)
 
 	return err
 }
 
 func (r *BlockRepo) SaveTransactions(transactions []*Transaction) error {
+	tx, err := r.BeginTx(context.TODO())
+	if err != nil {
+		return err
+	}
+
+	if err := r.SaveTransactionsTx(tx, transactions); err != nil {
+		return err
+	}
+
+	return r.CommitTx(tx)
+}
+
+func (r *BlockRepo) SaveTransactionsTx(tx *sql.Tx, transactions []*Transaction) error {
 	values := []interface{}{}
 	var b strings.Builder
 
@@ -82,7 +117,7 @@ func (r *BlockRepo) SaveTransactions(transactions []*Transaction) error {
 
 	q := b.String()
 
-	_, err := r.db.Exec(q, values...)
+	_, err := tx.Exec(q, values...)
 
 	return err
 }
@@ -121,9 +156,4 @@ func (r *BlockRepo) OldestFetchedBlockNumber() (*big.Int, error) {
 	}
 
 	return nil, nil
-}
-
-// todo: stub
-func (r *BlockRepo) MostRecentGap() (*big.Int, *big.Int, error) {
-	return nil, nil, nil
 }
