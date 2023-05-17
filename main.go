@@ -28,7 +28,7 @@ func main() {
 		DbPassword:       "eth",
 		DbName:           "eth",
 		RpcNode:          "https://data-seed-prebsc-1-s1.binance.org:8545/",
-		HeaderBatchSize:  500,
+		HeaderBatchSize:  100,
 		TxBatchSize:      500,
 		RateLimitValue:   10000,
 		RateLimitSeconds: time.Minute * 5,

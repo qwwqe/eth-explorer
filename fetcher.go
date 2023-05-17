@@ -151,28 +151,28 @@ func NewBlockFetcher(client *rpc.Client, repo *BlockRepo, config *Config) (*Bloc
 	return &BlockFetcher{client, repo, config, limiter}, nil
 }
 
-func (f *BlockFetcher) FetchBlocks() error {
+func (f *BlockFetcher) FetchBlocks() ([]*BlockHeader, error) {
 	if err := f.limiter.Wait(context.TODO()); err != nil {
-		return err
+		return nil, err
 	}
 
 	header, err := f.GetLatestHeader()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	fmt.Printf("Latest header: #%v (%v)\n", header.Number, header.Hash)
 
 	newestFetchedBlockNumber, err := f.repo.NewestFetchedBlockNumber()
 	if err != nil {
-		return err
+		return nil, err
 	} else if newestFetchedBlockNumber == nil {
 		newestFetchedBlockNumber = new(big.Int).Sub(header.Number, big.NewInt(int64(f.config.HeaderBatchSize)))
 	}
 
 	oldestFetchedBlockNumber, err := f.repo.OldestFetchedBlockNumber()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	fmt.Printf("Last fetched: #%v\n", newestFetchedBlockNumber)
@@ -192,69 +192,18 @@ func (f *BlockFetcher) FetchBlocks() error {
 		}
 	}
 
+	fmt.Printf("Fetching new headers: %v\n", newBlocks)
+	fmt.Printf("Fetching old headers: %v\n", oldBlocks)
+
 	// 幣安的rate limit好像是針對HTTP請求而言（無論payload多少rpc method）
 	f.limiter.Wait(context.TODO())
 
 	blockHeaders, err := f.GetHeadersByNumber(p)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	fmt.Printf("Retrieved %v block headers (%v new, %v old)\n", len(blockHeaders), newBlocks, oldBlocks)
-
-	transactions, err := f.FetchTransactions(blockHeaders)
-	if err != nil {
-		return err
-	}
-
-	fmt.Printf("Retrieved %v transactions\n", len(transactions))
-
-	if err := f.PopulateTransactionLogs(transactions); err != nil {
-		return err
-	}
-
-	// blockErrors := make(chan error)
-	// blockCompletions := make(chan struct{})
-
-	// blockResponses := new([]*types.Block)
-	// blockResponseMut := sync.Mutex{}
-
-	// for _, n := range p {
-	// 	n := n
-	// 	go func() {
-	// 		f.limiter.WaitN(context.TODO(), 2)
-	// 		block, err := ethclient.NewClient(f.client).BlockByNumber(context.TODO(), n)
-
-	// 		if err != nil {
-	// 			blockErrors <- err
-	// 			return
-	// 		}
-	// 		fmt.Printf("Received block: %v (%v)\n", block.Number(), block.Hash())
-
-	// 		blockResponseMut.Lock()
-	// 		*blockResponses = append(*blockResponses, block)
-	// 		blockResponseMut.Unlock()
-
-	// 		blockCompletions <- struct{}{}
-	// 	}()
-	// }
-
-	// pending := len(p)
-
-	// for pending > 0 {
-	// 	select {
-	// 	case <-blockCompletions:
-	// 		pending--
-	// 	case err := <-blockErrors:
-	// 		return err
-	// 	}
-	// }
-
-	if err := f.repo.SaveBlocks(blockHeaders); err != nil {
-		return err
-	}
-
-	return nil
+	return blockHeaders, nil
 }
 
 func (f *BlockFetcher) FetchTransactions(headers []*BlockHeader) ([]*Transaction, error) {
@@ -343,6 +292,28 @@ func (f *BlockFetcher) PopulateTransactionLogs(transactions []*Transaction) erro
 }
 
 func (f *BlockFetcher) FetchAll() error {
+	blockHeaders, err := f.FetchBlocks()
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Retrieved %v block headers\n", len(blockHeaders))
+
+	transactions, err := f.FetchTransactions(blockHeaders)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Retrieved %v transactions\n", len(transactions))
+
+	if err := f.PopulateTransactionLogs(transactions); err != nil {
+		return err
+	}
+
+	if err := f.repo.SaveBlocks(blockHeaders); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -444,7 +415,7 @@ func (f *BlockFetcher) Fetch() error {
 
 	go func() {
 		for {
-			if err := f.FetchBlocks(); err != nil {
+			if err := f.FetchAll(); err != nil {
 				fetcherErrors <- err
 			}
 			fmt.Printf("Tokens remaining: %v\n", f.limiter.Tokens())
