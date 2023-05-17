@@ -1,4 +1,4 @@
-package main
+package repo
 
 import (
 	"context"
@@ -9,13 +9,14 @@ import (
 	"strings"
 
 	_ "github.com/go-sql-driver/mysql"
+	"github.com/qwwqe/eth-explorer/pkg/common"
 )
 
 type BlockRepo struct {
 	db *sql.DB
 }
 
-func (r *BlockRepo) Open(config *Config) error {
+func (r *BlockRepo) Open(config *common.Config) error {
 	db, err := sql.Open("mysql",
 		fmt.Sprintf("%s:%s@tcp(%s:%s)/%s",
 			config.DbUser,
@@ -43,7 +44,7 @@ func (r *BlockRepo) CommitTx(tx *sql.Tx) error {
 	return tx.Commit()
 }
 
-func (r *BlockRepo) SaveBlocks(blocks []*BlockHeader) error {
+func (r *BlockRepo) SaveBlocks(blocks []*common.BlockHeader) error {
 	tx, err := r.BeginTx(context.TODO())
 	if err != nil {
 		return err
@@ -56,7 +57,7 @@ func (r *BlockRepo) SaveBlocks(blocks []*BlockHeader) error {
 	return r.CommitTx(tx)
 }
 
-func (r *BlockRepo) SaveBlocksTx(tx *sql.Tx, blocks []*BlockHeader) error {
+func (r *BlockRepo) SaveBlocksTx(tx *sql.Tx, blocks []*common.BlockHeader) error {
 	values := []interface{}{}
 	var b strings.Builder
 
@@ -78,7 +79,7 @@ func (r *BlockRepo) SaveBlocksTx(tx *sql.Tx, blocks []*BlockHeader) error {
 	return err
 }
 
-func (r *BlockRepo) SaveTransactions(transactions []*Transaction) error {
+func (r *BlockRepo) SaveTransactions(transactions []*common.Transaction) error {
 	tx, err := r.BeginTx(context.TODO())
 	if err != nil {
 		return err
@@ -91,7 +92,7 @@ func (r *BlockRepo) SaveTransactions(transactions []*Transaction) error {
 	return r.CommitTx(tx)
 }
 
-func (r *BlockRepo) SaveTransactionsTx(tx *sql.Tx, transactions []*Transaction) error {
+func (r *BlockRepo) SaveTransactionsTx(tx *sql.Tx, transactions []*common.Transaction) error {
 	values := []interface{}{}
 	var b strings.Builder
 
@@ -158,7 +159,7 @@ func (r *BlockRepo) OldestFetchedBlockNumber() (*big.Int, error) {
 	return nil, nil
 }
 
-func (r *BlockRepo) MostRecentBlockHeaders(n int) ([]*BlockHeader, error) {
+func (r *BlockRepo) MostRecentBlockHeaders(n int) ([]*common.BlockHeader, error) {
 	q := `SELECT number, hash, parentHash, timestamp FROM blocks ORDER BY number DESC LIMIT ?`
 
 	rows, err := r.db.Query(q, n)
@@ -167,10 +168,10 @@ func (r *BlockRepo) MostRecentBlockHeaders(n int) ([]*BlockHeader, error) {
 	}
 	defer rows.Close()
 
-	headers := []*BlockHeader{}
+	headers := []*common.BlockHeader{}
 
 	for rows.Next() {
-		var h BlockHeader
+		var h common.BlockHeader
 		var hash, parentHash []byte
 		var number sql.NullInt64
 		if err := rows.Scan(&number, &hash, &parentHash, &h.Time); err != nil {
@@ -195,7 +196,7 @@ func (r *BlockRepo) MostRecentBlockHeaders(n int) ([]*BlockHeader, error) {
 	return headers, nil
 }
 
-func (r *BlockRepo) GetBlockHeader(n *big.Int) (*BlockHeader, error) {
+func (r *BlockRepo) GetBlockHeader(n *big.Int) (*common.BlockHeader, error) {
 	q := `SELECT b.number, b.hash, b.parentHash, b.timestamp, t.hash
 	FROM blocks AS b
 	JOIN transactions AS t
@@ -211,7 +212,7 @@ func (r *BlockRepo) GetBlockHeader(n *big.Int) (*BlockHeader, error) {
 	}
 	defer rows.Close()
 
-	var h *BlockHeader
+	var h *common.BlockHeader
 
 	for rows.Next() {
 		var timestamp uint64
@@ -226,7 +227,7 @@ func (r *BlockRepo) GetBlockHeader(n *big.Int) (*BlockHeader, error) {
 			continue
 		}
 
-		h = new(BlockHeader)
+		h = new(common.BlockHeader)
 		h.TransactionHashes = []string{}
 
 		h.Time = timestamp
@@ -249,10 +250,10 @@ func (r *BlockRepo) GetBlockHeader(n *big.Int) (*BlockHeader, error) {
 	return h, nil
 }
 
-func (r *BlockRepo) GetTransaction(hash string) (*Transaction, error) {
+func (r *BlockRepo) GetTransaction(hash string) (*common.Transaction, error) {
 	q := `SELECT hash, from_address, to_address, nonce, input, value, logs FROM transactions WHERE hash = ?`
 
-	t := &Transaction{}
+	t := &common.Transaction{}
 
 	var h []byte
 	var nonce, value int64
@@ -278,7 +279,7 @@ func (r *BlockRepo) GetTransaction(hash string) (*Transaction, error) {
 	}
 
 	if t.Logs == nil {
-		t.Logs = []TransactionLog{}
+		t.Logs = []common.TransactionLog{}
 	}
 
 	return t, nil

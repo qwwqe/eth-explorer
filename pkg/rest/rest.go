@@ -1,4 +1,4 @@
-package main
+package rest
 
 import (
 	"fmt"
@@ -8,10 +8,12 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
+	expCommon "github.com/qwwqe/eth-explorer/pkg/common"
+	repo "github.com/qwwqe/eth-explorer/pkg/repo"
 )
 
 type ApiServer struct {
-	blockRepo *BlockRepo
+	blockRepo *repo.BlockRepo
 	echo      *echo.Echo
 }
 
@@ -25,13 +27,13 @@ type GetBlockResponse struct {
 }
 
 type GetTransactionResponse struct {
-	Hash        common.Hash      `json:"tx_hash"`
-	FromAddress string           `json:"from"`
-	ToAddress   string           `json:"to"`
-	Nonce       *big.Int         `json:"nonce"`
-	Value       *big.Int         `json:"value"`
-	Input       string           `json:"data"`
-	Logs        []TransactionLog `json:"logs"`
+	Hash        common.Hash                `json:"tx_hash"`
+	FromAddress string                     `json:"from"`
+	ToAddress   string                     `json:"to"`
+	Nonce       *big.Int                   `json:"nonce"`
+	Value       *big.Int                   `json:"value"`
+	Input       string                     `json:"data"`
+	Logs        []expCommon.TransactionLog `json:"logs"`
 }
 
 type SimpleBlockResponse struct {
@@ -60,7 +62,7 @@ func ClientErrorResponse() ErrorResponse {
 	}
 }
 
-func NewRestServer(repo *BlockRepo) *ApiServer {
+func NewRestServer(repo *repo.BlockRepo) *ApiServer {
 	s := ApiServer{}
 
 	e := echo.New()

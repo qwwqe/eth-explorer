@@ -5,25 +5,14 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/qwwqe/eth-explorer/pkg/common"
+	"github.com/qwwqe/eth-explorer/pkg/fetcher"
+	"github.com/qwwqe/eth-explorer/pkg/repo"
+	"github.com/qwwqe/eth-explorer/pkg/rest"
 )
 
-type Config struct {
-	DbHost           string        `env:"ETHEXPLORER_DB_HOST"`
-	DbPort           string        `env:"ETHEXPLORER_DB_PORT"`
-	DbUser           string        `env:"ETHEXPLORER_DB_USER"`
-	DbPassword       string        `env:"ETHEXPLORER_DB_PASSWORD"`
-	DbName           string        `env:"ETHEXPLORER_DB_NAME"`
-	RpcNode          string        `env:"ETHEXPLORER_RPC_NODE"`
-	HeaderBatchSize  int           `env:"ETHEXPLORER_HEADER_BATCH_SIZE"`
-	TxBatchSize      int           `env:"ETHEXPLORER_TX_BATCH_SIZE"`
-	LogBatchSize     int           `env:"ETHEXPLORER_LOG_BATCH_SIZE"`
-	RateLimitValue   int           `env:"ETHEXPLORER_RATE_LIMIT_VALUE"`
-	RateLimitSeconds time.Duration `env:"ETHEXPLORER_RATE_LIMIT_SECONDS"`
-	ApiListenPort    string        `env:"ETHEXPLORER_API_LISTEN_PORT"`
-}
-
 func main() {
-	config := &Config{
+	config := &common.Config{
 		DbHost:           "127.0.0.1",
 		DbPort:           "3306",
 		DbUser:           "eth",
@@ -43,18 +32,18 @@ func main() {
 		panic(err)
 	}
 
-	repo := &BlockRepo{}
+	repo := &repo.BlockRepo{}
 
 	if err := repo.Open(config); err != nil {
 		panic(err)
 	}
 
-	fetcher, err := NewBlockFetcher(client, repo, config)
+	fetcher, err := fetcher.NewBlockFetcher(client, repo, config)
 	if err != nil {
 		panic(err)
 	}
 
-	restApi := NewRestServer(repo)
+	restApi := rest.NewRestServer(repo)
 
 	errChan := make(chan error)
 

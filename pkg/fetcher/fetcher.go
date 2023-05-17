@@ -1,161 +1,27 @@
-package main
+package fetcher
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
 	"math/big"
-	"strings"
 
 	"github.com/ethereum/go-ethereum"
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/qwwqe/eth-explorer/pkg/common"
+	"github.com/qwwqe/eth-explorer/pkg/repo"
 	"golang.org/x/time/rate"
 )
 
-type BlockHeader struct {
-	Number            *big.Int    `json:"number"`
-	ParentHash        common.Hash `json:"parentHash"`
-	Hash              common.Hash `json:"hash"`
-	Time              uint64      `json:"timestamp"`
-	TransactionHashes []string    `json:"transactions"`
-}
-
-func (h *BlockHeader) UnmarshalJSON(b []byte) error {
-	type blockHeader struct {
-		Number            *json.RawMessage `json:"number"`
-		ParentHash        common.Hash      `json:"parentHash"`
-		Hash              common.Hash      `json:"hash"`
-		Time              *json.RawMessage `json:"timestamp"`
-		TransactionHashes []string         `json:"transactions"`
-	}
-
-	var bh blockHeader
-	if err := json.Unmarshal(b, &bh); err != nil {
-		fmt.Println("b")
-
-		return err
-	}
-
-	h.ParentHash = bh.ParentHash
-	h.Hash = bh.Hash
-	h.TransactionHashes = bh.TransactionHashes
-
-	if bh.Number != nil && string(*bh.Number) != "null" {
-		s := strings.Trim(string(*bh.Number), `"`)
-
-		i, ok := new(big.Int).SetString(s, 0)
-		if !ok {
-			return fmt.Errorf("Could not unmarshal `%s` into *big.Int", s)
-		}
-
-		h.Number = i
-	}
-
-	if bh.Time != nil && string(*bh.Time) != "null" {
-		s := strings.Trim(string(*bh.Time), `"`)
-
-		t, ok := new(big.Int).SetString(s, 0)
-		if !ok {
-			return fmt.Errorf("Could not unmarshal `%s` into *big.Int", s)
-		}
-
-		h.Time = t.Uint64()
-	}
-
-	return nil
-}
-
-type Transaction struct {
-	BlockNumber *big.Int         `json:"blockNumber"`
-	Hash        common.Hash      `json:"hash"`
-	FromAddress string           `json:"from"`
-	ToAddress   string           `json:"to"`
-	Nonce       *big.Int         `json:"nonce"`
-	Value       *big.Int         `json:"value"`
-	Input       string           `json:"data"`
-	Logs        []TransactionLog `json:"logs"`
-}
-
-func (t *Transaction) UnmarshalJSON(b []byte) error {
-	type transaction struct {
-		BlockNumber *json.RawMessage `json:"blockNumber"`
-		Hash        common.Hash      `json:"hash"`
-		FromAddress string           `json:"from"`
-		ToAddress   string           `json:"to"`
-		Nonce       *json.RawMessage `json:"nonce"`
-		Value       *json.RawMessage `json:"value"`
-		Input       string           `json:"data"`
-	}
-
-	var tx transaction
-	if err := json.Unmarshal(b, &tx); err != nil {
-		fmt.Println("t")
-
-		return err
-	}
-
-	t.Hash = tx.Hash
-	t.FromAddress = tx.FromAddress
-	t.ToAddress = tx.ToAddress
-	t.Input = tx.Input
-
-	if tx.BlockNumber != nil && string(*tx.BlockNumber) != "null" {
-		s := strings.Trim(string(*tx.BlockNumber), `"`)
-
-		i, ok := new(big.Int).SetString(s, 0)
-		if !ok {
-			return fmt.Errorf("Could not unmarshal `%s` into *big.Int", s)
-		}
-
-		t.BlockNumber = i
-	}
-
-	if tx.Nonce != nil && string(*tx.Nonce) != "null" {
-		s := strings.Trim(string(*tx.Nonce), `"`)
-
-		i, ok := new(big.Int).SetString(s, 0)
-		if !ok {
-			return fmt.Errorf("Could not unmarshal `%s` into *big.Int", s)
-		}
-
-		t.Nonce = i
-	}
-
-	if tx.Value != nil && string(*tx.Value) != "null" {
-		s := strings.Trim(string(*tx.Value), `"`)
-
-		i, ok := new(big.Int).SetString(s, 0)
-		if !ok {
-			return fmt.Errorf("Could not unmarshal `%s` into *big.Int", s)
-		}
-
-		t.Value = i
-	}
-
-	return nil
-}
-
-type TransactionReceipt struct {
-	TransactionHash common.Hash      `json:"transactionHash"`
-	Logs            []TransactionLog `json:"logs"`
-}
-
-type TransactionLog struct {
-	Index uint64 `json:"logIndex"`
-	Data  string `json:"data"`
-}
-
 type BlockFetcher struct {
 	client  *rpc.Client
-	repo    *BlockRepo
-	config  *Config
+	repo    *repo.BlockRepo
+	config  *common.Config
 	limiter *rate.Limiter
 }
 
-func NewBlockFetcher(client *rpc.Client, repo *BlockRepo, config *Config) (*BlockFetcher, error) {
+func NewBlockFetcher(client *rpc.Client, repo *repo.BlockRepo, config *common.Config) (*BlockFetcher, error) {
 	var fetchRate rate.Limit
 
 	if config.RateLimitSeconds.Seconds() <= 0 || config.RateLimitValue <= 0 {
@@ -173,7 +39,7 @@ func NewBlockFetcher(client *rpc.Client, repo *BlockRepo, config *Config) (*Bloc
 	return &BlockFetcher{client, repo, config, limiter}, nil
 }
 
-func (f *BlockFetcher) FetchBlocks() ([]*BlockHeader, error) {
+func (f *BlockFetcher) FetchBlocks() ([]*common.BlockHeader, error) {
 	if err := f.limiter.Wait(context.TODO()); err != nil {
 		return nil, err
 	}
@@ -231,15 +97,15 @@ func (f *BlockFetcher) FetchBlocks() ([]*BlockHeader, error) {
 	return blockHeaders, nil
 }
 
-func (f *BlockFetcher) FetchTransactions(headers []*BlockHeader) ([]*Transaction, error) {
+func (f *BlockFetcher) FetchTransactions(headers []*common.BlockHeader) ([]*common.Transaction, error) {
 	transactionHashes := []string{}
 
 	for _, h := range headers {
 		transactionHashes = append(transactionHashes, h.TransactionHashes...)
 	}
 
-	transactions := make([]*Transaction, 0, len(transactionHashes))
-	transactionResults := make(chan []*Transaction)
+	transactions := make([]*common.Transaction, 0, len(transactionHashes))
+	transactionResults := make(chan []*common.Transaction)
 	transactionErrors := make(chan error)
 	pending := 0
 
@@ -271,12 +137,12 @@ func (f *BlockFetcher) FetchTransactions(headers []*BlockHeader) ([]*Transaction
 	return transactions, nil
 }
 
-func (f *BlockFetcher) PopulateTransactionLogs(transactions []*Transaction) error {
-	receiptResults := make(chan []*TransactionReceipt)
+func (f *BlockFetcher) PopulateTransactionLogs(transactions []*common.Transaction) error {
+	receiptResults := make(chan []*common.TransactionReceipt)
 	receiptErrors := make(chan error)
 	pending := 0
 
-	lookup := map[string]*Transaction{}
+	lookup := map[string]*common.Transaction{}
 
 	for _, t := range transactions {
 		lookup[t.Hash.Hex()] = t
@@ -355,8 +221,8 @@ func (f *BlockFetcher) FetchAll() error {
 	return nil
 }
 
-func (f *BlockFetcher) GetLatestHeader() (*BlockHeader, error) {
-	var header *BlockHeader
+func (f *BlockFetcher) GetLatestHeader() (*common.BlockHeader, error) {
+	var header *common.BlockHeader
 	err := f.client.CallContext(context.TODO(), &header, "eth_getBlockByNumber", "latest", false)
 	if err == nil && header == nil {
 		return nil, ethereum.NotFound
@@ -364,9 +230,9 @@ func (f *BlockFetcher) GetLatestHeader() (*BlockHeader, error) {
 	return header, err
 }
 
-func (f *BlockFetcher) GetHeadersByNumber(numbers []*big.Int) ([]*BlockHeader, error) {
+func (f *BlockFetcher) GetHeadersByNumber(numbers []*big.Int) ([]*common.BlockHeader, error) {
 	methods := make([]rpc.BatchElem, len(numbers))
-	results := make([]*BlockHeader, len(numbers))
+	results := make([]*common.BlockHeader, len(numbers))
 
 	for i, n := range numbers {
 		methods[i] = rpc.BatchElem{
@@ -392,9 +258,9 @@ func (f *BlockFetcher) GetHeadersByNumber(numbers []*big.Int) ([]*BlockHeader, e
 	return results, nil
 }
 
-func (f *BlockFetcher) GetTransactionsByHash(hashes []string) ([]*Transaction, error) {
+func (f *BlockFetcher) GetTransactionsByHash(hashes []string) ([]*common.Transaction, error) {
 	methods := make([]rpc.BatchElem, len(hashes))
-	results := make([]*Transaction, len(hashes))
+	results := make([]*common.Transaction, len(hashes))
 
 	for i, h := range hashes {
 		methods[i] = rpc.BatchElem{
@@ -420,7 +286,7 @@ func (f *BlockFetcher) GetTransactionsByHash(hashes []string) ([]*Transaction, e
 	return results, nil
 }
 
-func (f *BlockFetcher) GetTransactionReceipts(transactions []*Transaction) ([]*TransactionReceipt, error) {
+func (f *BlockFetcher) GetTransactionReceipts(transactions []*common.Transaction) ([]*common.TransactionReceipt, error) {
 	methods := make([]rpc.BatchElem, len(transactions))
 	// see: https://github.com/ethereum/go-ethereum/issues/23132
 	results := make([]map[string]any, len(transactions))
@@ -448,10 +314,10 @@ func (f *BlockFetcher) GetTransactionReceipts(transactions []*Transaction) ([]*T
 		}
 	}
 
-	receipts := make([]*TransactionReceipt, 0, len(results))
+	receipts := make([]*common.TransactionReceipt, 0, len(results))
 
 	for _, nativeReceipt := range results {
-		r := &TransactionReceipt{}
+		r := &common.TransactionReceipt{}
 		hash, ok := nativeReceipt["transactionHash"]
 		if !ok {
 			return nil, fmt.Errorf("Missing transaction hash field!!")
