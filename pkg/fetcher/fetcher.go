@@ -47,7 +47,7 @@ func (f *BlockFetcher) FetchBlocks() ([]*common.BlockHeader, error) {
 		return nil, err
 	}
 
-	fmt.Printf("Latest header: #%v (%v)\n", header.Number, header.Hash)
+	fmt.Printf("Latest header: #%v\n", header.Number)
 
 	newestFetchedBlockNumber, err := f.repo.NewestFetchedBlockNumber()
 	if err != nil {
